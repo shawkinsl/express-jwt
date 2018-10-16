@@ -126,6 +126,66 @@ describe('failure tests', function () {
     });
   });
 
+  it('should call isExpired if provided and token is expired', function() {
+    var secret = 'shhhhhh';
+    var token = jwt.sign({foo: 'bar', exp: 1382412921 }, secret);
+
+    var callbackCalled = false;
+
+    function expiredCallback(err, req, next) {
+      callbackCalled = true;
+    }
+
+    req.headers = {};
+    req.headers.authorization = 'Bearer ' + token;
+    expressjwt({secret: 'shhhhhh', isExpired: expiredCallback})(req, res, function(err) {
+      assert.ok(callbackCalled);
+    });
+  });
+
+  it('should throw error if isExpired doesn\'t call next and and token is expired', function() {
+    var secret = 'shhhhhh';
+    var token = jwt.sign({foo: 'bar', exp: 1382412921 }, secret);
+
+    var callbackCalled = false;
+
+    function expiredCallback(err, req, next) {
+      callbackCalled = true;
+      // don't call next = TokenExpiredError
+    }
+
+    req.headers = {};
+    req.headers.authorization = 'Bearer ' + token;
+    expressjwt({secret: 'shhhhhh', isExpired: expiredCallback})(req, res, function(err) {
+      assert.ok(err);
+      assert.ok(callbackCalled);
+      assert.equal(callbackCalled, true)
+      assert.equal(err.code, 'invalid_token');
+      assert.equal(err.inner.name, 'TokenExpiredError');
+      assert.equal(err.message, 'jwt expired');
+    });
+  });
+
+  it('should work if token expired but isExpired calls next', function() {
+    var secret = 'shhhhhh';
+    var token = jwt.sign({foo: 'bar', exp: 1382412921 }, secret);
+
+    var callbackCalled = false;
+
+    function expiredCallback(err, req, next) {
+      callbackCalled = true
+      next()  // no TokenExpiredError
+    }
+
+    req.headers = {};
+    req.headers.authorization = 'Bearer ' + token;
+    expressjwt({secret: 'shhhhhh', isExpired: expiredCallback})(req, res, function(err) {
+      assert.equal(err, null);
+      assert.ok(callbackCalled);
+      assert.equal('bar', req.user.foo);
+    });
+  });
+
   it('should throw if token issuer is wrong', function() {
     var secret = 'shhhhhh';
     var token = jwt.sign({foo: 'bar', iss: 'http://foo' }, secret);
@@ -133,6 +193,23 @@ describe('failure tests', function () {
     req.headers = {};
     req.headers.authorization = 'Bearer ' + token;
     expressjwt({secret: 'shhhhhh', issuer: 'http://wrong'})(req, res, function(err) {
+      assert.ok(err);
+      assert.equal(err.code, 'invalid_token');
+      assert.equal(err.message, 'jwt issuer invalid. expected: http://wrong');
+    });
+  });
+
+  it('should throw error on expired token if isExpired calls next but issuer is wrong', function() {
+    var secret = 'shhhhhh';
+    var token = jwt.sign({foo: 'bar', iss: 'http://foo', exp: 1382412921 }, secret);
+
+    function expiredCallback(err, req, next) {
+      next()  // ignore expired tokens
+    }
+
+    req.headers = {};
+    req.headers.authorization = 'Bearer ' + token;
+    expressjwt({secret: 'shhhhhh', issuer: 'http://wrong', isExpired: expiredCallback})(req, res, function(err) {
       assert.ok(err);
       assert.equal(err.code, 'invalid_token');
       assert.equal(err.message, 'jwt issuer invalid. expected: http://wrong');
@@ -177,6 +254,35 @@ describe('failure tests', function () {
       });
   });
 
+  it('should not call isExpired if provided and token is expired but signature is wrong', function() {
+    var secret = 'shhhhhh';
+    var token = jwt.sign({foo: 'bar', exp: 1382412921 }, secret);
+
+    // manipulate the token
+    var newContent = new Buffer("{foo: 'bar', edg: 'ar'}").toString('base64');
+    var splitetToken = token.split(".");
+    splitetToken[1] = newContent;
+    var newToken = splitetToken.join(".");
+
+    // build request
+    req.headers = [];
+    req.headers.authorization = 'Bearer ' + newToken;
+
+    var callbackCalled = false;
+    function expiredCallback(err, req, next) {
+      // in this test, this should not be called i.e. callbackCalled should stay false
+      callbackCalled = true;
+      next()  // never care about expired tokens; signature check should still fail
+    }
+
+    expressjwt({secret: 'shhhhhh', isExpired: expiredCallback})(req, res, function(err) {
+      assert.ok(err);
+      assert.equal(callbackCalled, false)
+      assert.equal(err.code, 'invalid_token');
+      assert.equal(err.message, 'invalid token');
+    });
+  });
+
   it('should throw error if token is expired even with when credentials are not required', function() {
       var secret = 'shhhhhh';
       var token = jwt.sign({foo: 'bar', exp: 1382412921}, secret);
@@ -188,6 +294,28 @@ describe('failure tests', function () {
           assert.equal(err.code, 'invalid_token');
           assert.equal(err.message, 'jwt expired');
       });
+  });
+
+  it('should call isExpired if provided and token is expired even if credentials are not required', function() {
+    var secret = 'shhhhhh';
+    var token = jwt.sign({foo: 'bar', exp: 1382412921 }, secret);
+
+    var callbackCalled = false;
+
+    function expiredCallback(err, req, next) {
+      callbackCalled = true;
+    }
+
+    req.headers = {};
+    req.headers.authorization = 'Bearer ' + token;
+    expressjwt({secret: 'shhhhhh', isExpired: expiredCallback, credentialsRequired: false})(req, res, function(err) {
+      assert.ok(err);
+      assert.ok(callbackCalled);
+      assert.equal(callbackCalled.foo, 'bar')
+      assert.equal(err.code, 'invalid_token');
+      assert.equal(err.inner.name, 'TokenExpiredError');
+      assert.equal(err.message, 'jwt expired');
+    });
   });
 
   it('should throw error if token is invalid even with when credentials are not required', function() {

@@ -31,6 +31,33 @@ describe('revoked jwts', function(){
     });
   });
 
+  it('should throw if token is revoked even if isExpired calls next and token is also expired', function(){
+    var req = {};
+    var res = {};
+    var token = jwt.sign({ jti: revoked_id, foo: 'bar', exp: 1382412921}, secret);
+
+    var isExpiredCalled = false;
+
+    req.headers = {};
+    req.headers.authorization = 'Bearer ' + token;
+
+    expressjwt({
+      secret: secret,
+      isRevoked: function(req, payload, done){
+        done(null, payload.jti && payload.jti === revoked_id);
+      },
+      isExpired: function(err, req, next) {
+        isExpiredCalled = true;
+        next()
+      }
+    })(req, res, function(err) {
+      assert.ok(err);
+      assert.equal(isExpiredCalled, true);
+      assert.equal(err.code, 'revoked_token');
+      assert.equal(err.message, 'The token has been revoked.');
+    });
+  });
+
   it('should work if token is not revoked', function(){
     var req = {};
     var res = {};

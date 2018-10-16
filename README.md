@@ -41,6 +41,22 @@ jwt({ secret: 'shhhhhhared-secret',
 
 > If the JWT has an expiration (`exp`), it will be checked.
 
+You can supply an `isExpired` callback to handle the case when a token is expired, but otherwise completely valid:
+
+```javascript
+function expiredCallback(err, req, next) {
+  // handle an expired token, instead of raising an error
+  let shouldContinueAnyways = false
+  // TODO: determine if we should accept the token anyways
+  if (shouldContinueAnyways) {
+    next()  // silence the TokenExpiredError and continue with req.user set
+  } else {
+    next(err)  // should raise the original TokenExpiredError
+  }
+}
+jwt({secret: 'shhhhhhared-secret', isExpired: expiredCallback}),
+```
+
 If you are using a base64 URL-encoded secret, pass a `Buffer` with `base64` encoding as the secret instead of a string:
 
 ```javascript
